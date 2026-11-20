@@ -278,3 +278,9 @@ test("미리보기 중계는 압축 안 된 텍스트·wasm 만 gzip 한다", as
   assert.equal(shouldGzip({}, { "content-type": "application/wasm" }, "GET"), false);
   assert.equal(shouldGzip(gz, { "content-type": "application/wasm" }, "HEAD"), false);
 });
+test("서버 상태: CPU 사용률과 메모리 계산", async () => {
+  const { cpuPercent, memInfo } = await import("./server.mjs");
+  assert.equal(cpuPercent({ idle: 100, all: 200 }, { idle: 150, all: 400 }), 75);
+  assert.equal(cpuPercent({ idle: 1, all: 1 }, { idle: 1, all: 1 }), 0);
+  assert.deepEqual(memInfo("MemTotal:       1000 kB\nMemFree:  10 kB\nMemAvailable:    250 kB\n"), { used: 750 * 1024, total: 1000 * 1024 });
+});
