@@ -267,3 +267,14 @@ test(".env 설정으로 총괄 폴더 · 에이전트 별칭 · 읽기 전용을
   assert.deepEqual(uiConfig({ LEAD_DIR: " my-workspace ", AGENT_NICKNAMES: "web:웹, api : 백엔드,bad,:x", READONLY_AGENTS: "api, ", SERVER_NAME: " dev-box " }),
     { lead: "my-workspace", nick: { web: "웹", api: "백엔드" }, ro: ["api"], name: "dev-box" });
 });
+test("미리보기 중계는 압축 안 된 텍스트·wasm 만 gzip 한다", async () => {
+  const { shouldGzip } = await import("./preview.mjs");
+  const gz = { "accept-encoding": "gzip, deflate, br" };
+  assert.equal(shouldGzip(gz, { "content-type": "application/wasm" }, "GET"), true);
+  assert.equal(shouldGzip(gz, { "content-type": "text/javascript; charset=utf-8" }, "GET"), true);
+  assert.equal(shouldGzip(gz, { "content-type": "application/wasm", "content-encoding": "br" }, "GET"), false);
+  assert.equal(shouldGzip(gz, { "content-type": "text/event-stream" }, "GET"), false);
+  assert.equal(shouldGzip(gz, { "content-type": "image/png" }, "GET"), false);
+  assert.equal(shouldGzip({}, { "content-type": "application/wasm" }, "GET"), false);
+  assert.equal(shouldGzip(gz, { "content-type": "application/wasm" }, "HEAD"), false);
+});
