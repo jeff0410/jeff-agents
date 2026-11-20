@@ -1,6 +1,7 @@
 // 개발 서버 미리보기 — <이름>.<PREVIEW_DOMAIN> 으로 온 요청을 이 서버 127.0.0.1:<포트> 개발 서버로 넘긴다.
 import http from 'node:http';
 import net from 'node:net';
+import zlib from 'node:zlib';
 import { readFileSync } from 'node:fs';
 
 // previews.json: [{ "name": "web", "port": 5254, "dir": "/절대/경로", "cmd": "corepack pnpm dev" }]
@@ -25,11 +26,25 @@ export function upstreamHeaders(h, port) {
   delete out['x-forwarded-host'];
   return out;
 }
+// 개발 서버는 보통 압축 없이 보낸다. 디버그 wasm 은 수십~수백 MB 라 원격으로 열면 한참 걸리므로 중계하면서 gzip 한다.
+// 이벤트 스트림(SSE)은 버퍼링되면 안 되므로 그대로 둔다.
+export function shouldGzip(reqH, resH, method) {
+  if (method === 'HEAD' || resH['content-encoding'] || !/\bgzip\b/.test(String(reqH['accept-encoding'] || ''))) return false;
+  const t = String(resH['content-type'] || '');
+  return !/event-stream/.test(t) && /text\/|javascript|json|wasm|xml|svg/.test(t);
+}
 export function proxy(req, res, p, parent) {
   const up = http.request({ host: '127.0.0.1', port: p.port, method: req.method, path: req.url, headers: upstreamHeaders(req.headers, p.port) }, r => {
     const h = { ...r.headers };
     delete h['x-frame-options'];
     h['content-security-policy'] = `frame-ancestors ${parent}`; // 대시보드 안 iframe 으로만 띄울 수 있게
+    if (shouldGzip(req.headers, r.headers, req.method)) {
+      delete h['content-length'];
+      h['content-encoding'] = 'gzip';
+      h.vary = h.vary ? h.vary + ', Accept-Encoding' : 'Accept-Encoding';
+      res.writeHead(r.statusCode, h);
+      return r.pipe(zlib.createGzip({ level: 1 })).pipe(res); // level 1: 빠르게, 그래도 wasm 은 1/10 이하
+    }
     res.writeHead(r.statusCode, h);
     r.pipe(res);
   });
