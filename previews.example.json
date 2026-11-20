@@ -1,0 +1,3 @@
+[
+  { "name": "web", "port": 5254, "dir": "/home/me/project/my-web-app", "cmd": "corepack pnpm dev" }
+]
