@@ -62,6 +62,8 @@ header{height:58px;flex:none;display:flex;align-items:center;gap:10px;padding:0 
 .usage .fill{height:100%;background:linear-gradient(90deg,var(--pink),#7c5cff)}
 .usage .u.low .fill{background:#ff4d6d}
 .usage .u.low b{color:#ff4d6d}
+#sys{gap:12px}#sys .track{display:none}#sys .nm{font-size:11px;letter-spacing:.04em}
+@media (max-width:1800px){#sys .x{display:none}}@media (max-width:1440px){#sys{display:none}}
 @media (max-width:1360px){.usage .track{display:none}.usage{gap:10px}}
 @media (max-width:1180px){.usage .u .nm{display:none}.usage .u:not(:first-child){display:none}}
 .nsdlg{border:1px solid var(--line2);border-radius:14px;background:var(--bg2);color:var(--text);padding:20px;width:min(440px,calc(100vw - 32px))}
@@ -321,6 +323,7 @@ select.tag:disabled{cursor:default;opacity:.7}
   <button class="chip" data-f="stall"><span class="dot bg-stall"></span>응답 없음 <b id="nStall">0</b></button>
   <button class="chip" data-f="idle"><span class="dot bg-idle"></span>대기 · 완료 <b id="nIdle">0</b></button>
   <span class="sp"></span>
+  <div class="usage" id="sys"></div>
   <div class="usage" id="usage"></div>
   <button class="chip" id="pvBtn" title="개발 서버 화면을 여기서 봐요">▣ 화면 확인</button>
   <button class="kbtn" id="openPal">명령 <kbd>⌘K</kbd></button>
@@ -686,6 +689,19 @@ async function loadUsage() {
   }).join('');
 }
 loadUsage(); setInterval(loadUsage, 300000);
+// 서버 상태: 숫자만(마우스를 올리면 자세히). 85% 넘으면 빨강. 5초마다(탭이 안 보이면 건너뜀).
+const gb = n => (n / 1073741824).toFixed(1);
+async function loadSys() {
+  if (document.hidden) return;
+  const s = await fetch('/api/sys', { cache: 'no-store' }).then(r => r.ok ? r.json() : null).catch(() => null);
+  if (!s) return;
+  const bar = (nm, pct, txt, tip, x = '') => `<div class="u ${pct > 85 ? 'low' : ''}" title="${esc(tip)}"><span class="nm">${nm}</span><b>${esc(txt)}</b>${x ? `<span class="x">${esc(x)}</span>` : ''}</div>`;
+  const m = Math.round(s.mem.used / s.mem.total * 100);
+  $('#sys').innerHTML = (s.cpu == null ? '' : bar('CPU', s.cpu, s.cpu + '%', `CPU ${s.cores}코어 · ${s.cpu}% 사용`))
+    + bar('MEM', m, m + '%', `메모리 ${gb(s.mem.used)} / ${gb(s.mem.total)} GB (${m}%)`, `${gb(s.mem.used)}/${gb(s.mem.total)}G`)
+    + (s.gpu ? bar('GPU', Math.max(s.gpu.util, Math.round(s.gpu.used / s.gpu.total * 100)), s.gpu.util + '%', `${s.gpu.name} · 사용 ${s.gpu.util}% · VRAM ${gb(s.gpu.used)} / ${gb(s.gpu.total)} GB · ${s.gpu.temp}°C`, `${gb(s.gpu.used)}/${gb(s.gpu.total)}G`) : '');
+}
+loadSys(); setInterval(loadSys, 5000);
 // 새 세션: 이름 · 폴더 · 모델을 골라 서버 tmux 에 Claude Code 를 띄운다. 목록에는 훅이 자동으로 올린다.
 document.body.insertAdjacentHTML('beforeend', `<dialog class="nsdlg" id="nsDlg"><form method="dialog" id="nsForm">
   <h3>새 세션</h3>

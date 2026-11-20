@@ -4,7 +4,8 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync, realpathSync, statS
 import { randomBytes, timingSafeEqual, createHash, createHmac } from 'node:crypto';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { homedir } from 'node:os';
+import { homedir, cpus, totalmem, freemem } from 'node:os';
+import { execFile } from 'node:child_process';
 import { createStore, hookToken, tmux, MODELS } from './agents.mjs';
 import { loadPreviews, previewOf, proxy, proxyUpgrade, isUp } from './preview.mjs';
 
@@ -274,6 +275,7 @@ export function createApp(cfg) {
 
       if (path === '/api/dirs' && isGet) return send(res, 200, JSON.stringify({ dirs: sessionDirs(), models: MODELS }), { 'Content-Type': 'application/json' });
       if (path === '/api/config' && isGet) return send(res, 200, JSON.stringify(uiConfig(cfg)), { 'Content-Type': 'application/json' });
+      if (path === '/api/sys' && isGet) return send(res, 200, JSON.stringify(await sysStats()), { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
       if (path === '/api/usage' && isGet) return send(res, 200, JSON.stringify(await usage()), { 'Content-Type': 'application/json' });
       if (path === '/api/previews' && isGet) {
         const list = await Promise.all(previews().map(async p => ({ name: p.name, url: `${scheme}://${p.name}.${pvDomain}/`, up: await isUp(p.port) })));
@@ -334,6 +336,30 @@ export function createApp(cfg) {
   return srv;
 }
 
+// 서버 상태: CPU(직전 호출과의 차이), 메모리(MemAvailable 기준), NVIDIA GPU(nvidia-smi 가 있을 때만)
+let cpuPrev = null;
+const cpuTimes = () => cpus().reduce((a, c) => { const t = c.times; a.idle += t.idle; a.all += t.user + t.nice + t.sys + t.idle + t.irq; return a; }, { idle: 0, all: 0 });
+export function cpuPercent(prev, cur) {
+  const all = cur.all - prev.all;
+  return all > 0 ? Math.round((1 - (cur.idle - prev.idle) / all) * 100) : 0;
+}
+// /proc/meminfo 의 MemAvailable 이 실제로 쓸 수 있는 양(캐시 제외). 없으면 os.freemem
+export function memInfo(text) {
+  const kb = k => +((String(text || '').match(new RegExp(`^${k}:\\s+(\\d+)`, 'm')) || [])[1] || 0) * 1024;
+  const total = kb('MemTotal') || totalmem(), avail = kb('MemAvailable') || freemem();
+  return { used: total - avail, total };
+}
+const gpuInfo = () => new Promise(ok => execFile('nvidia-smi', ['--query-gpu=name,utilization.gpu,memory.used,memory.total,temperature.gpu', '--format=csv,noheader,nounits'], { timeout: 2000 }, (e, out) => {
+  if (e) return ok(null);
+  const [name, util, used, total, temp] = String(out).split('\n')[0].split(',').map(s => s.trim());
+  ok(name ? { name, util: +util, used: +used * 1048576, total: +total * 1048576, temp: +temp } : null);
+}));
+async function sysStats() {
+  const cur = cpuTimes(), cpu = cpuPrev ? cpuPercent(cpuPrev, cur) : null;
+  cpuPrev = cur;
+  let mi = ''; try { mi = readFileSync('/proc/meminfo', 'utf8'); } catch {}
+  return { cpu, cores: cpus().length, mem: memInfo(mi), gpu: await gpuInfo() };
+}
 // .env → 화면 설정: LEAD_DIR=총괄 폴더 이름, AGENT_NICKNAMES=type:별칭,..., READONLY_AGENTS=type,..., SERVER_NAME=화면의 서버 이름
 export function uiConfig(cfg) {
   const list = v => String(v || '').split(',').map(x => x.trim()).filter(Boolean);
