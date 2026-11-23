@@ -283,6 +283,11 @@ select.tag:disabled{cursor:default;opacity:.7}
 .livebox .mono{color:var(--yellow);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
 /* ---------- 반응형 ---------- */
+.panel{position:relative}
+.rsz{position:absolute;left:-4px;top:0;bottom:0;width:8px;cursor:col-resize;z-index:5}
+.rsz:hover,.rsz.on{background:linear-gradient(90deg,transparent 3px,var(--line) 3px,var(--line) 5px,transparent 5px)}
+body.rszing{cursor:col-resize;user-select:none}
+
 .left{width:clamp(220px,20vw,310px)}
 .panel{width:clamp(360px,34vw,540px)}
 .seg button{white-space:nowrap}
@@ -292,6 +297,7 @@ select.tag:disabled{cursor:default;opacity:.7}
 .crow{flex-wrap:wrap;row-gap:6px}.crow .lbl,.crow .kh{white-space:nowrap}
 @media (max-width:1280px){.ctool .keys,.crow .kh{display:none}}
 @media (max-width:860px){
+  .rsz{display:none}.panel{width:auto!important}
   /* 태블릿·모바일: 목록 → 조직도 → 상세·지시 순서로 세로로 쌓고, 페이지가 스크롤된다 */
   html,body{height:auto}body{overflow:auto}
   .body{flex-direction:column}
@@ -360,6 +366,7 @@ select.tag:disabled{cursor:default;opacity:.7}
   </section>
 
   <aside class="panel">
+    <div class="rsz" id="rsz" title="끌어서 너비 조절 · 더블클릭 기본값"></div>
     <div class="ph" id="ph"></div>
     <div class="pbody" id="pbody"></div>
     <div class="compose">
@@ -951,6 +958,23 @@ fetch('/api/config', { cache: 'no-store' }).then(r => r.ok ? r.json() : null).ca
 }).then(r => r.status === 401 ? (location.href = '/login') : r.json()).then(d => d && apply(d)).catch(() => {});
 connect();
 setView(matchMedia('(max-width:560px)').matches ? 'grid' : 'graph');  // 폰에선 조직도가 너무 작아져 라이브 그리드로 시작
+
+// 상세 패널 왼쪽 가장자리를 끌어 너비 조절, 더블클릭이면 기본값. 너비는 이 브라우저에만 저장.
+(() => {
+  const panel = document.querySelector('.panel'), h = $('#rsz'), K = 'panelW';
+  const set = w => { panel.style.width = w ? Math.round(Math.min(Math.max(w, 320), innerWidth * 0.7)) + 'px' : ''; };
+  try { set(+localStorage.getItem(K) || 0); } catch {}
+  h.onpointerdown = e => {
+    e.preventDefault(); h.setPointerCapture(e.pointerId); h.classList.add('on'); document.body.classList.add('rszing');
+    const x0 = e.clientX, w0 = panel.offsetWidth;
+    h.onpointermove = ev => set(w0 + x0 - ev.clientX);
+    h.onpointerup = () => {
+      h.onpointermove = h.onpointerup = null; h.classList.remove('on'); document.body.classList.remove('rszing');
+      try { localStorage.setItem(K, panel.offsetWidth); } catch {}
+    };
+  };
+  h.ondblclick = () => { set(0); try { localStorage.removeItem(K); } catch {} };
+})();
 </script>
 </body>
 </html>
