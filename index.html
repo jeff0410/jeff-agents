@@ -272,6 +272,8 @@ select.tag:disabled{cursor:default;opacity:.7}
 .sess.child{margin-left:16px;padding:9px 12px}
 .sess.child .nm{font-size:14px}
 .sess.ghost{opacity:.55}
+.fold{margin-left:16px;padding:6px 12px;border:1px dashed var(--line);border-radius:10px;font-size:12.5px;color:var(--sub);text-align:left}
+.fold:hover{border-color:var(--line2);color:var(--fg,#fff)}
 .conn{font-size:12px;display:flex;align-items:center;gap:6px}
 .conn.ok{color:var(--green);text-shadow:0 0 8px rgba(114,241,184,.6)} .conn.bad{color:var(--red)}
 [hidden]{display:none!important}
@@ -460,6 +462,8 @@ function card(it) {
     <div class="r1"><span class="nm">${esc(it.nm)}</span><span class="st c-${st}">${ind(st)}${LBL[st]}</span><span class="timer" data-el="${esc(it.key)}" style="${st === 'run' ? '' : 'color:var(--dim);text-shadow:none'}">${elapsed(it)}</span></div>
     <div class="r2">${curLine(it)}</div>${tail}<div class="r3">${meta}</div></div>`;
 }
+let folded = new Set();
+try { folded = new Set(JSON.parse(localStorage.getItem('folded') || '[]')); } catch {}
 function renderList(all) {
   const q = $('#q').value.trim();
   const ok = it => (!filter || it.st === filter || (filter === 'idle' && it.st === 'done')) && (!q || (it.nm + (it.type || '') + (it.s.dir || '')).includes(q));
@@ -467,10 +471,21 @@ function renderList(all) {
   for (const it of all.filter(i => i.kind === 's')) {
     const kids = all.filter(i => i.kind === 'a' && i.sid === it.sid && ok(i));
     if (!ok(it) && !kids.length) continue;
-    html.push(card(it), ...kids.map(card));
+    html.push(card(it));
+    if (!kids.length) continue;
+    // 접힌 총괄은 작업 중 · 승인 필요 · 응답 없음 · 선택한 서브만 남기고 나머지는 한 줄 요약으로. 검색 중이면 모두 보인다.
+    const shut = folded.has(it.sid) && !q;
+    const show = shut ? kids.filter(k => ['run', 'appr', 'stall'].includes(k.st) || sel === k.key) : kids;
+    const cnt = Object.entries(kids.reduce((m, k) => (m[k.st] = (m[k.st] || 0) + 1, m), {})).map(([k, n]) => `${LBL[k]} ${n}`).join(' · ');
+    html.push(`<button class="fold" data-sid="${esc(it.sid)}">${shut ? '▸' : '▾'} 서브 ${kids.length}개 · ${cnt}${shut ? '' : ' · 접기'}</button>`, ...show.map(card));
   }
   $('#list').innerHTML = html.join('') || `<div class="empty">${snap.sessions.length ? '조건에 맞는 항목이 없어요' : '연결된 세션이 없어요'}</div>`;
   document.querySelectorAll('.sess').forEach(n => n.onclick = () => select(n.dataset.k));
+  document.querySelectorAll('.fold').forEach(b => b.onclick = () => {
+    const id = b.dataset.sid; folded.has(id) ? folded.delete(id) : folded.add(id);
+    try { localStorage.setItem('folded', JSON.stringify([...folded])); } catch {}
+    renderList(items());
+  });
 }
 
 /* ---------- 조직도 ---------- */
